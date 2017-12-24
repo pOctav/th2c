@@ -1,6 +1,7 @@
 import collections
 import functools
 import logging
+from urlparse import urlparse
 
 import h2.config
 import h2.connection
@@ -18,43 +19,23 @@ from .config import DEFAULT_RECONNECT_INTERVAL, DEFAULT_CONNECTION_TIMEOUT
 from .connection import HTTP2ClientConnection
 from .exceptions import RequestTimeout, TH2CError
 from .stream import HTTP2ClientStream
+from .util import IOLoopSingleton
 
 log = logging.getLogger(__name__)
 
 
 class AsyncHTTP2Client(object):
-    CLIENT_INSTANCES = dict()
 
-    def __new__(cls, host, port, *args, **kwargs):
-        """
-        Create an asynchronous HTTP/2 client for this (host, port).
-        Only one instance of AsyncHTTP2Client exists per (host, port).
-        """
-        if (host, port) in cls.CLIENT_INSTANCES:
-            client = cls.CLIENT_INSTANCES[(host, port)]
-        else:
-            client = super(AsyncHTTP2Client, cls).__new__(cls)
-            cls.CLIENT_INSTANCES[(host, port)] = client
+    # __metaclass__ = IOLoopSingleton
 
-        return client
-
-    def __init__(self, host, port, secure=True, verify_certificate=True,
-                 ssl_key=None, ssl_cert=None,
-                 max_active_requests=10, io_loop=None,
-                 auto_reconnect=False,
+    def __init__(self, secure=True, verify_certificate=True, ssl_key=None,
+                 ssl_cert=None, max_active_requests=10, io_loop=None,
+                 auto_reconnect=False, force_instance=False,
                  auto_reconnect_interval=DEFAULT_RECONNECT_INTERVAL,
                  _connection_cls=HTTP2ClientConnection,
                  _stream_cls=HTTP2ClientStream):
 
-        if getattr(self, 'initialized', False):
-            return
-        else:
-            self.initialized = True
-        self.io_loop = io_loop or IOLoop.instance()
-
-        self.host = host
-        self.port = port
-
+        self.io_loop = io_loop or IOLoop.current()
         self.secure = secure
         self.verify_certificate = verify_certificate
         self.ssl_key = ssl_key
@@ -77,11 +58,18 @@ class AsyncHTTP2Client(object):
 
         self.connection = None
 
-        self.connect()
+    def connect(self, url):
+        parsed = urlparse(url)
+        host = parsed.hostname
+        port = parsed.port
+        if not port:
+            if parsed.scheme == 'https':
+                port = 443
+            else:
+                port = 80
 
-    def connect(self):
         self.connection = self.connection_cls(
-            self.host, self.port, self.tcp_client, self.secure, self.io_loop,
+            host, port, self.secure, self.tcp_client, self.io_loop,
             self.on_connection_ready, self.on_connection_closed,
             ssl_options={
                 'verify_certificate': self.verify_certificate,
@@ -90,6 +78,7 @@ class AsyncHTTP2Client(object):
             },
             connect_timeout=DEFAULT_CONNECTION_TIMEOUT,
             max_concurrent_streams=self.max_active_requests,
+            url=url
         )
         self.connection.add_event_handler(
             h2.events.RemoteSettingsChanged, self.on_settings_changed
@@ -100,7 +89,7 @@ class AsyncHTTP2Client(object):
         """ Callback executed when the connection is ready. """
         log.info(
             'HTTP/2 Connection established to %s:%d!',
-            self.host, self.port
+            self.connection.host, self.connection.port
         )
         self.process_pending_requests()
 
@@ -114,6 +103,7 @@ class AsyncHTTP2Client(object):
         if not isinstance(reason, Exception):
             reason = TH2CError(reason)
 
+        original_url = self.connection.url
         self.connection = None
 
         if self.auto_reconnect:
@@ -123,7 +113,7 @@ class AsyncHTTP2Client(object):
             )
             self.io_loop.add_timeout(
                 self.io_loop.time() + self.auto_reconnect_interval,
-                self.connect
+                functools.partial(self.connect, original_url)
             )
         else:
             while self.pending_requests:
@@ -165,6 +155,9 @@ class AsyncHTTP2Client(object):
         # prepare the request object
         request.headers = httputil.HTTPHeaders(request.headers)
         request = _RequestProxy(request, dict(HTTPRequest._DEFAULTS))
+
+        # create connection
+        self.connect(request.url)
 
         # wrap everything in a Future
         future = TracebackFuture()

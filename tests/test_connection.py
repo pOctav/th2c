@@ -12,14 +12,33 @@ from th2c.exceptions import RequestTimeout
 
 
 class HTTP2ClientConnectionTestCase(AsyncTestCase):
+    tcp_client = mock.MagicMock()
+
+    def test_one_instance_per_host_port_secure(self):
+        # same host, port, security flag
+        conn1 = HTTP2ClientConnection('host', 1234, False, self.tcp_client, self.io_loop)
+        conn2 = HTTP2ClientConnection('host', 1234, False, self.tcp_client, self.io_loop)
+        self.assertEqual(id(conn1), id(conn2))
+
+        # different parameter combinations
+        conn1 = HTTP2ClientConnection('host', 1234, False, self.tcp_client, self.io_loop)
+        conn2 = HTTP2ClientConnection('host', 1234, True, self.tcp_client, self.io_loop)
+        self.assertNotEqual(id(conn1), id(conn2))
+
+        conn1 = HTTP2ClientConnection('host', 1234, False, self.tcp_client, self.io_loop)
+        conn2 = HTTP2ClientConnection('host2', 1234, False, self.tcp_client, self.io_loop)
+        self.assertNotEqual(id(conn1), id(conn2))
+
+        conn1 = HTTP2ClientConnection('host', 1234, False, self.tcp_client, self.io_loop)
+        conn2 = HTTP2ClientConnection('host', 12345, False, self.tcp_client, self.io_loop)
+        self.assertNotEqual(id(conn1), id(conn2))
 
     @gen_test
     def test_connect_timeout(self):
-        tcp_client = mock.MagicMock()
         connection_closed = mock.MagicMock()
 
         connection = HTTP2ClientConnection(
-            'host', 1234, tcp_client, False, self.io_loop,
+            'host', 1234, False, self.tcp_client, self.io_loop,
             connect_timeout=1,
             on_connection_closed=connection_closed
         )
@@ -34,11 +53,10 @@ class HTTP2ClientConnectionTestCase(AsyncTestCase):
         self.assertEqual(connection.timed_out, True)
 
     def test_connection_cleanup(self):
-        tcp_client = mock.MagicMock()
         connection_closed = mock.MagicMock()
 
         connection = HTTP2ClientConnection(
-            'host', 1234, tcp_client, False, self.io_loop,
+            'host', 1234, False, self.tcp_client, self.io_loop,
             on_connection_closed=connection_closed
         )
 
@@ -55,13 +73,11 @@ class HTTP2ClientConnectionTestCase(AsyncTestCase):
         self.assertEqual(connection.closed, True)
 
     def test_io_stream_error_propagates(self):
-        tcp_client = mock.MagicMock()
-
         connection_closed = mock.MagicMock()
         connection_ready = mock.MagicMock()
 
         connection = HTTP2ClientConnection(
-            'host', 1234, tcp_client, False, self.io_loop,
+            'host', 1234, False, self.tcp_client, self.io_loop,
             on_connection_closed=connection_closed,
             on_connection_ready=connection_ready,
         )
@@ -82,13 +98,11 @@ class HTTP2ClientConnectionTestCase(AsyncTestCase):
         connection_closed.assert_called_once_with(exc)
 
     def test_write_future_error(self):
-        tcp_client = mock.MagicMock()
-
         connection_closed = mock.MagicMock()
         connection_ready = mock.MagicMock()
 
         connection = HTTP2ClientConnection(
-            'host', 1234, tcp_client, False, self.io_loop,
+            'host', 1234, False, self.tcp_client, self.io_loop,
             on_connection_closed=connection_closed,
             on_connection_ready=connection_ready,
         )

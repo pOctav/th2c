@@ -27,10 +27,21 @@ AlPN_PROTOCOLS = ['h2']
 
 class HTTP2ClientConnection(object):
 
-    def __init__(self, host, port, tcp_client, secure, io_loop,
+    CONNECTION_INSTANCES = dict()
+
+    def __new__(cls, host, port, secure, *args, **kwargs):
+        key = (host, port, secure)
+        if key in cls.CONNECTION_INSTANCES:
+            connection = cls.CONNECTION_INSTANCES[key]
+        else:
+            connection = super(HTTP2ClientConnection, cls).__new__(cls)
+            cls.CONNECTION_INSTANCES[key] = connection
+        return connection
+
+    def __init__(self, host, port, secure, tcp_client, io_loop,
                  on_connection_ready=None, on_connection_closed=None,
                  connect_timeout=DEFAULT_CONNECTION_TIMEOUT, ssl_options=None,
-                 max_concurrent_streams=MAX_CONCURRENT_STREAMS):
+                 max_concurrent_streams=MAX_CONCURRENT_STREAMS, url=None):
         """
         :param host: address host
         :type host: str
@@ -50,12 +61,19 @@ class HTTP2ClientConnection(object):
         :type ssl_options: dict
         :param max_concurrent_streams: maximum number of concurrent streams
         :type max_concurrent_streams: int
+        :param url: full url of the address
+        :type url: str
         """
+        log.debug('Connection init')
+        if self in self.__class__.CONNECTION_INSTANCES:
+            return
+
         self.io_loop = io_loop
 
         self.host = host
         self.port = port
         self.secure = secure
+        self.url = url
 
         self.tcp_client = tcp_client
         self.on_connection_ready = on_connection_ready
@@ -193,6 +211,7 @@ class HTTP2ClientConnection(object):
         self.closed = True
         self._is_ready = False
         self._is_connected = False
+        self.__class__.CONNECTION_INSTANCES.pop(self, None)
         self.on_connection_closed(reason)
 
     @property

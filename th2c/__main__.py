@@ -11,12 +11,12 @@ from tornado.locks import Condition
 
 from .client import AsyncHTTP2Client
 
-if not os.path.exists('/opt/dev/th2c/logs'):
-    os.makedirs('/opt/dev/th2c/logs')
+if not os.path.exists('./logs'):
+    os.makedirs('./logs')
 
 
 logging.basicConfig(
-    filename='/opt/dev/th2c/logs/th2c_run_%s.log' %
+    filename='./logs/th2c_run_%s.log' %
              (datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")),
     level=logging.DEBUG,
     format='[%(asctime)s] {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s'
@@ -50,8 +50,6 @@ def test_apple():
     path = '/3/device/{}'.format(device_token)
 
     async_http_client_ssl = AsyncHTTP2Client(
-        host=host,
-        port=port,
         secure=True,
         ssl_key=os.path.join(apple_path, key_file),
         ssl_cert=os.path.join(apple_path, cert_file)
@@ -79,10 +77,7 @@ def test_apple():
 
 @gen.coroutine
 def test_local():
-    client = AsyncHTTP2Client(
-        host='localhost', port=8080, secure=True,
-        verify_certificate=False
-    )
+    client = AsyncHTTP2Client(secure=True, verify_certificate=False)
 
     req = HTTPRequest(
         url='https://localhost:8080',
@@ -123,8 +118,7 @@ def test_local_many(n):
         cond.increment(value=1)
 
     client = AsyncHTTP2Client(
-        host='localhost', port=8080, secure=True,
-        verify_certificate=False, max_active_requests=10,
+        secure=True, verify_certificate=False, max_active_requests=10,
         auto_reconnect=True, auto_reconnect_interval=1
     )
 

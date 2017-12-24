@@ -1,6 +1,7 @@
 import mock
 
 from tornado import gen
+from tornado.ioloop import IOLoop
 from tornado.testing import AsyncTestCase, gen_test
 from tornado.httpclient import HTTPRequest
 
@@ -12,34 +13,16 @@ from th2c.exceptions import RequestTimeout, TH2CError
 
 class AsyncHTTP2ClientTestCase(AsyncTestCase):
 
-    def tearDown(self):
-        # make sure we reset the clients so that
-        # we get new instances for each test
-        AsyncHTTP2Client.CLIENT_INSTANCES = dict()
+    def test_one_instance_per_ioloop(self):
+        # same ioloop
+        client_1 = AsyncHTTP2Client()
+        client_2 = AsyncHTTP2Client()
+        self.assertEqual(id(client_1), id(client_2))
 
-    def test_one_instance_per_host_and_port(self):
-        connection_cls = mock.create_autospec(HTTP2ClientConnection)
-
-        some_client_1 = AsyncHTTP2Client(
-            'some_host', 0, _connection_cls=connection_cls, io_loop=self.io_loop
-        )
-        some_client_2 = AsyncHTTP2Client(
-            'some_host', 0, _connection_cls=connection_cls, io_loop=self.io_loop
-        )
-
-        self.assertEqual(id(some_client_1), id(some_client_2))
-
-    def test_different_instances_per_host_and_port(self):
-        connection_cls = mock.create_autospec(HTTP2ClientConnection)
-
-        some_client_1 = AsyncHTTP2Client(
-            'some_host', 1, _connection_cls=connection_cls, io_loop=self.io_loop
-        )
-        some_client_2 = AsyncHTTP2Client(
-            'some_host', 0, _connection_cls=connection_cls, io_loop=self.io_loop
-        )
-
-        self.assertNotEqual(id(some_client_1), id(some_client_2))
+        # different ioloops
+        client_1 = AsyncHTTP2Client()
+        client_2 = AsyncHTTP2Client(io_loop=IOLoop())
+        self.assertNotEqual(id(client_1), id(client_2))
 
     def test_maximum_active_requests(self):
         connection_inst = mock.MagicMock(spec=HTTP2ClientConnection)
@@ -51,7 +34,6 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
         maxmimum_active_requests = 1
 
         client = AsyncHTTP2Client(
-            'host', 1234,
             max_active_requests=maxmimum_active_requests,
             _connection_cls=connection_cls,
             _stream_cls=stream_cls,
@@ -84,7 +66,6 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
         max_active_requests = 1
 
         client = AsyncHTTP2Client(
-            'host', 1234,
             max_active_requests=max_active_requests,
             _connection_cls=connection_cls,
             io_loop=self.io_loop
@@ -122,7 +103,6 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
         stream_cls = mock.create_autospec(HTTP2ClientStream)
 
         client = AsyncHTTP2Client(
-            'host', 1234,
             _connection_cls=connection_cls,
             _stream_cls=stream_cls,
             io_loop=self.io_loop
@@ -147,6 +127,7 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
 
     def test_close(self):
         connection_inst = mock.MagicMock(spec=HTTP2ClientConnection)
+        connection_inst.url = 'host'
         connection_inst.is_ready = False
         connection_cls = mock.create_autospec(HTTP2ClientConnection)
         connection_cls.return_value = connection_inst
@@ -154,13 +135,12 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
         stream_cls = mock.create_autospec(HTTP2ClientStream)
 
         client = AsyncHTTP2Client(
-            'host', 1234,
             _connection_cls=connection_cls,
             _stream_cls=stream_cls,
             io_loop=self.io_loop
         )
+        client.fetch(HTTPRequest(url='host', method='GET'))
         client.on_connection_closed = mock.MagicMock()
-
         client.close()
 
         self.assertEqual(client.closed, True)
@@ -168,6 +148,7 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
 
     def test_connection_closed_stops_pending(self):
         connection_inst = mock.MagicMock(spec=HTTP2ClientConnection)
+        connection_inst.url = 'host'
         connection_inst.is_ready = False
         connection_cls = mock.create_autospec(HTTP2ClientConnection)
         connection_cls.return_value = connection_inst
@@ -175,7 +156,6 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
         stream_cls = mock.create_autospec(HTTP2ClientStream)
 
         client = AsyncHTTP2Client(
-            'host', 1234,
             _connection_cls=connection_cls,
             _stream_cls=stream_cls,
             io_loop=self.io_loop
@@ -208,6 +188,7 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
     @gen_test
     def test_connection_closed_auto_reconnect(self):
         connection_inst = mock.MagicMock(spec=HTTP2ClientConnection)
+        connection_inst.url = 'host'
         connection_inst.is_ready = False
         connection_cls = mock.create_autospec(HTTP2ClientConnection)
         connection_cls.return_value = connection_inst
@@ -215,7 +196,6 @@ class AsyncHTTP2ClientTestCase(AsyncTestCase):
         stream_cls = mock.create_autospec(HTTP2ClientStream)
 
         client = AsyncHTTP2Client(
-            'host', 1234,
             _connection_cls=connection_cls,
             _stream_cls=stream_cls,
             io_loop=self.io_loop

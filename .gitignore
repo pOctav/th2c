@@ -1,2 +1,5 @@
 *.pyc
 .vagrant
+
+.idea
+logs
